@@ -75,22 +75,40 @@ async function runAlphaHunter(collectionSymbol, thresholdPct) {
         throw new Error(`Failed to parse listings data or fetch: ${e.message}`);
     }
 
-    // --- Fetch Twitter Sentiment ---
+    // --- Read Bird Cookies ---
+    let birdAuthToken = '';
+    let birdCt0 = '';
+    const birdConfigPath = path.join(process.env.HOME, '.openclaw', 'workspace', '.birdrc.json5'); // Assuming .birdrc.json5 is in workspace
+
     try {
-        const twitterResponse = await new Promise((resolve, reject) => {
-            exec(`bird search "${twitterSearchQuery}" --json --auth-token "${process.env.BIRD_AUTH_TOKEN}" --ct0 "${process.env.BIRD_CT0}" -n 10`, (error, stdout, stderr) => {
-                if (error) {
-                    console.error(`Bird search exec error: ${error}`);
-                    // Don't reject for bird errors, just log and continue without sentiment
-                    return resolve('[]');
-                }
-                if (stderr) console.error(`Bird search stderr: ${stderr}`);
-                resolve(stdout);
-            });
-        });
-        twitterData = JSON.parse(twitterResponse);
+        const birdConfigContent = await fs.readFile(birdConfigPath, 'utf8');
+        const birdConfig = JSON.parse(birdConfigContent);
+        birdAuthToken = birdConfig['auth-token'];
+        birdCt0 = birdConfig.ct0;
     } catch (e) {
-        console.error(`Failed to parse Twitter data: ${e.message}`);
+        console.error(`Failed to load bird config from ${birdConfigPath}: ${e.message}`);
+    }
+
+    // --- Fetch Twitter Sentiment ---
+    if (birdAuthToken && birdCt0) {
+        try {
+            const twitterResponse = await new Promise((resolve, reject) => {
+                exec(`bird search "${twitterSearchQuery}" --json --auth-token "${birdAuthToken}" --ct0 "${birdCt0}" -n 10`, (error, stdout, stderr) => {
+                    if (error) {
+                        console.error(`Bird search exec error: ${error}`);
+                        return resolve('[]');
+                    }
+                    if (stderr) console.error(`Bird search stderr: ${stderr}`);
+                    resolve(stdout);
+                });
+            });
+            twitterData = JSON.parse(twitterResponse);
+        } catch (e) {
+            console.error(`Failed to parse Twitter data: ${e.message}`);
+            twitterData = [];
+        }
+    } else {
+        console.warn("Bird tokens not found, skipping Twitter sentiment analysis.");
         twitterData = [];
     }
 
@@ -132,29 +150,29 @@ async function runAlphaHunter(collectionSymbol, thresholdPct) {
     const currentVsHistoricalDiff = ((historicalAverageFloorPriceSOL - floorPriceSOL) / historicalAverageFloorPriceSOL) * 100;
 
     if (currentVsHistoricalDiff >= thresholdPct) {
-        status = "UNDERVALUED";
+        status = "UNDERVALUED (vs. Historical Avg)";
         message = `Floor price is ${currentVsHistoricalDiff.toFixed(2)}% below its historical average. Potential buying opportunity!`;
         confidence = "MEDIUM";
     } else if (currentVsHistoricalDiff <= -thresholdPct) {
-        status = "OVERVALUED";
+        status = "OVERVALUED (vs. Historical Avg)";
         message = `Floor price is ${Math.abs(currentVsHistoricalDiff).toFixed(2)}% above its historical average. Caution advised.`;
         confidence = "MEDIUM";
     } else {
         // If not significantly different from historical, compare against current listed average
         const currentVsListedDiff = ((averageListedPriceSOL - floorPriceSOL) / averageListedPriceSOL) * 100;
         if (currentVsListedDiff >= thresholdPct) {
-            status = "UNDERVALUED (vs. Listed)";
+            status = "UNDERVALUED (vs. Listed Avg)";
             message = `Floor price is ${currentVsListedDiff.toFixed(2)}% below the average listed price.`;
             confidence = "LOW";
         } else if (currentVsListedDiff <= -thresholdPct) {
-            status = "OVERVALUED (vs. Listed)";
+            status = "OVERVALUED (vs. Listed Avg)";
             message = `Floor price is ${Math.abs(currentVsListedDiff).toFixed(2)}% above the average listed price.`;
             confidence = "LOW";
         }
     }
 
 
-    // --- Sentiment Analysis (Simple Keyword Match) ---
+    // --- Sentiment Analysis ---
     let positiveTweets = 0;
     let negativeTweets = 0;
     const totalTweets = twitterData.length;
@@ -194,13 +212,13 @@ async function runAlphaHunter(collectionSymbol, thresholdPct) {
             confidence = "HIGH";
             message += ` Strong positive sentiment on Twitter (${(netSentiment * 100).toFixed(0)}% net positive).`;
         } else if (netSentiment > 0.2) { // Mildly positive
-            confidence = confidence === "CRITICAL" ? "LOW" : "MEDIUM"; // If critical from price, sentiment can slightly mitigate
+            confidence = confidence === "CRITICAL" ? "LOW" : "MEDIUM";
             message += ` Mildly positive sentiment on Twitter.`;
         } else if (netSentiment < -0.5) { // Strongly negative
             confidence = "CRITICAL";
             message += ` CRITICAL negative sentiment on Twitter (${(netSentiment * 100).toFixed(0)}% net negative).`;
         } else if (netSentiment < -0.2) { // Mildly negative
-            confidence = confidence === "HIGH" ? "MEDIUM" : "LOW"; // If high from price, sentiment can slightly degrade
+            confidence = confidence === "HIGH" ? "MEDIUM" : "LOW";
             message += ` Mildly negative sentiment on Twitter.`;
         } else { // Neutral or mixed
             message += ` Neutral or mixed sentiment on Twitter.`;
@@ -233,22 +251,10 @@ async function runAlphaHunter(collectionSymbol, thresholdPct) {
     const collectionSymbol = process.env.collectionSymbol;
     const thresholdPct = parseFloat(process.env.thresholdPct || "5"); // Default 5%
 
-    // Setup BIRD_AUTH_TOKEN and BIRD_CT0 as environment variables for bird CLI to work
-    // These should be passed to the agent's environment or read from a config file.
-    // For local testing, ensure these are set in the environment before running.
-
     if (!collectionSymbol) {
         console.error("Error: collectionSymbol parameter is required.");
         process.exit(1);
     }
-
-    if (!process.env.BIRD_AUTH_TOKEN || !process.env.BIRD_CT0) {
-        // console.error("Error: BIRD_AUTH_TOKEN and BIRD_CT0 environment variables are required for Twitter sentiment analysis.");
-        // console.error("Skipping Twitter sentiment analysis. Please set them in your environment or skill call.");
-        // We can choose to exit here or just continue without sentiment. For hackathon, continue.
-        // For cron, it's better to fail if sentiment is critical. For direct call, continue.
-    }
-
 
     try {
         const result = await runAlphaHunter(collectionSymbol, thresholdPct);
