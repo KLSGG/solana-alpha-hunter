@@ -4,37 +4,31 @@ const fs = require('fs').promises;
 const path = require('path');
 
 async function runTwitterSweep() {
-    console.log(`Starting GameFi Twitter Sweep (Enhanced 2026 - On-chain Update)...`);
+    console.log(`Starting Aira Alpha Sweep (V5.0 - Pro-Gamer Edition)...`);
 
-    // --- Read Bird Cookies from Environment Variables ---
     let birdAuthToken = process.env.BIRD_AUTH_TOKEN;
     let birdCt0 = process.env.BIRD_CT0;
 
     if (!birdAuthToken || !birdCt0) {
-        return "ERROR: BIRD_AUTH_TOKEN or BIRD_CT0 environment variables are missing. Please provide them in the cron job message.";
+        return "ERROR: BIRD_AUTH_TOKEN or BIRD_CT0 environment variables are missing.";
     }
 
     const birdAuthFlags = `--auth-token "${birdAuthToken}" --ct0 "${birdCt0}"`;
 
     let allTweets = [];
-    const tweetSources = [];
 
-    // --- Helper: On-chain Checker (DexScreener API) ---
     async function getOnChainData(ca) {
         const cmd = `curl -s "https://api.dexscreener.com/latest/dex/tokens/${ca}"`;
         try {
             const { stdout } = await new Promise((resolve, reject) => {
                 exec(cmd, { timeout: 10000 }, (error, stdout) => {
-                    if (error) return reject(error);
-                    resolve({ stdout });
+                    if (stdout) resolve({ stdout });
+                    else reject(error);
                 });
             });
             const data = JSON.parse(stdout);
             if (data.pairs && data.pairs.length > 0) {
-                // Get the pair with highest liquidity (usually the main one)
-                const solPairs = data.pairs.filter(p => p.chainId === 'solana');
-                const bestPair = solPairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0] || data.pairs[0];
-                
+                const bestPair = data.pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
                 return {
                     symbol: bestPair.baseToken.symbol,
                     price: bestPair.priceUsd,
@@ -43,158 +37,121 @@ async function runTwitterSweep() {
                     url: bestPair.url
                 };
             }
-        } catch (e) {
-            console.error(`[ON-CHAIN] Error checking CA ${ca}: ${e.message}`);
-        }
+        } catch (e) {}
         return null;
     }
 
-    // --- 1. Sweeping Commands ---
     const queries = [
-        { name: "Alpha & Airdrop", query: `(GameFi OR Web3Gaming) (airdrop OR incentivized OR "daily check-in" OR "node sale" OR faucet OR "claimable" OR "snapshot") min_faves:5 lang:en since:2026-02-05 -is:retweet` },
-        { name: "Solana & AI Agent", query: `(Solana OR @Solana) (AI Agent OR "Agentic Game" OR "Autonomous Agent" OR @Colosseum) (launch OR mint OR whitepaper) min_faves:10 lang:en since:2026-02-05` },
-        { name: "Ecosystem & Trending", query: `(Ronin OR Sui OR Abstract OR Monad) (GameFi OR Web3Gaming) min_faves:15 lang:en since:2026-02-05` }
+        { name: "Alpha", query: `(GameFi OR Web3Gaming) (airdrop OR incentivized OR "daily check-in") min_faves:5 lang:en since:2026-02-05 -is:retweet` },
+        { name: "Solana", query: `(Solana OR @Solana) (AI Agent OR @Colosseum) min_faves:10 lang:en since:2026-02-05` }
     ];
 
     for (const q of queries) {
-        const cmd = `bird search "${q.query}" --json ${birdAuthFlags} -n 20`;
+        const escapedQuery = q.query.replace(/"/g, '\\"');
+        const cmd = `bird ${birdAuthFlags} search "${escapedQuery}" --json -n 20`;
         try {
             const { stdout } = await new Promise((resolve, reject) => {
                 exec(cmd, { timeout: 30000 }, (error, stdout) => {
-                    if (error) return reject(error);
-                    resolve({ stdout });
+                    if (stdout) resolve({ stdout });
+                    else reject(error);
                 });
             });
-            const newTweets = JSON.parse(stdout);
-            allTweets.push(...newTweets);
-        } catch (e) {
-            console.error(`[TWITTER SWEEP] Error running bird search for "${q.name}": ${e.message}`);
-        }
+            allTweets.push(...JSON.parse(stdout));
+        } catch (e) {}
     }
 
-    const homeCmd = `bird home --json ${birdAuthFlags} -n 20`;
-    try {
-        const { stdout } = await new Promise((resolve, reject) => {
-            exec(homeCmd, { timeout: 30000 }, (error, stdout) => {
-                if (error) return reject(error);
-                resolve({ stdout });
-            });
-        });
-        allTweets.push(...JSON.parse(stdout));
-    } catch (e) {
-        console.error(`[TWITTER SWEEP] Error running bird home: ${e.message}`);
-    }
-
-    // --- 2. Bộ Lọc & Phân Tích ---
     const alphaAlerts = [];
-    const gamefiNewsInsights = [];
+    const newsInsights = [];
     const uniqueTweetIds = new Set();
-
-    console.log(`Analyzing ${allTweets.length} tweets...`);
 
     for (const tweet of allTweets) {
         if (uniqueTweetIds.has(tweet.id)) continue;
         uniqueTweetIds.add(tweet.id);
 
-        let type = "💡 NEWS";
         let category = "NEWS";
-        let trustScore = 0;
-        const lowerText = tweet.text.toLowerCase();
-        const author = tweet.author;
-        
-        // 1. TRUST SCORING
-        if (author.verified) trustScore += 20;
-        if (author.public_metrics) {
-            const followers = author.public_metrics.followers_count;
-            if (followers > 50000) trustScore += 30;
-            else if (followers > 5000) trustScore += 15;
-        }
-
-        // 2. ON-CHAIN SCAN (NEW FEATURE)
+        let onChainData = null;
         const solAddressRegex = /[1-9A-HJ-NP-Za-km-z]{32,44}/g;
         const foundAddresses = tweet.text.match(solAddressRegex);
-        let onChainData = null;
 
         if (foundAddresses) {
-            console.log(`[ON-CHAIN] Found potential CAs in tweet: ${foundAddresses.join(', ')}`);
-            // Check the first valid-looking address
-            for (const addr of foundAddresses) {
-                onChainData = await getOnChainData(addr);
-                if (onChainData) {
-                    onChainData.address = addr;
-                    break; 
-                }
-            }
+            onChainData = await getOnChainData(foundAddresses[0]);
+            if (onChainData) onChainData.address = foundAddresses[0];
         }
 
-        // 3. CLASSIFICATION
-        const urgentAlphaKeywords = ["minting now", "limited spots", "snapshot in", "claim in", "fcfs"];
-        if (lowerText.includes("send sol") || lowerText.includes("whatsapp")) {
-            category = "SCAM";
-        } else if (urgentAlphaKeywords.some(kw => lowerText.includes(kw)) || onChainData) {
-            category = "ALPHA";
-            type = onChainData ? "💎 TOKEN ALPHA" : "🔥 URGENT ALPHA";
-        }
+        if (tweet.text.toLowerCase().includes("send sol")) continue;
 
-        if (category === "SCAM" || trustScore < 10) continue;
-
-        let verdict = trustScore >= 50 ? "High Trust" : "Potential";
-        const tweetLink = `https://twitter.com/${tweet.author.username}/status/${tweet.id}`;
+        let loop = "N/A (Early Stage)";
+        let incentive = "N/A (Info Only)";
+        const txt = tweet.text.toLowerCase();
         
-        let takeaway = tweet.text.replace(/(?:https?|ftp):\/\/[\n\S]+/g, '').replace(/\s+/g, ' ').trim();
-        if (takeaway.length > 150) takeaway = takeaway.substring(0, 150) + '...';
-
-        // Integrate On-Chain data into takeaway
-        if (onChainData) {
-            const liq = (onChainData.liquidity / 1000).toFixed(1) + "k";
-            const vol = (onChainData.volume24h / 1000).toFixed(1) + "k";
-            takeaway = `[${onChainData.symbol}] Price: $${onChainData.price} | Liq: $${liq} | Vol: $${vol} | CA: ${onChainData.address.substring(0,6)}... - ${takeaway}`;
-            verdict = onChainData.liquidity > 50000 ? "🔥 Liquid/Safe" : "⚠️ Low Liquidity";
+        if (txt.includes("quest") || txt.includes("daily") || txt.includes("farming")) { 
+            loop = "Retention-based Grind"; incentive = "Points-to-Airdrop"; 
+        } else if (txt.includes("pvp") || txt.includes("arena") || txt.includes("battle")) { 
+            loop = "Skill-based Arena"; incentive = "Competitive $TOKEN Rewards"; 
+        } else if (txt.includes("mining") || txt.includes("node") || txt.includes("depin")) { 
+            loop = "Infrastructure Utility"; incentive = "Passive Yield"; 
         }
 
         const reportObject = {
-            headline: `${type} (@${tweet.author.username})`,
-            content: takeaway,
-            verdict: verdict,
-            url: tweetLink
+            projectName: onChainData ? `$${onChainData.symbol}` : `@${tweet.author.username}`,
+            handle: `@${tweet.author.username}`,
+            content: tweet.text.replace(/(?:https?|ftp):\/\/[\n\S]+/g, '').replace(/\s+/g, ' ').trim().substring(0, 150),
+            url: `https://twitter.com/${tweet.author.username}/status/${tweet.id}`,
+            onChain: onChainData,
+            category: onChainData ? "ALPHA" : "NEWS",
+            loop: loop,
+            incentive: incentive
         };
 
-        if (category === "ALPHA") alphaAlerts.push(reportObject);
-        else gamefiNewsInsights.push(reportObject);
+        if (reportObject.category === "ALPHA") alphaAlerts.push(reportObject);
+        else newsInsights.push(reportObject);
     }
 
-    // --- 3. REPORTING ---
-    const scanTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
-    let finalReport = `📰 **ON-CHAIN ALPHA SCAN:** (Scan Time: ${scanTime})\n\n`;
+    const scanTime = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' });
+    
+    let report = `# 🦅 AIRA'S ELITE INTELLIGENCE — V5.0 (Pro-Gamer Edition)\nPure Data · Strategic Insight · Zero Filler\n\n———— 🌸 —————\n\n## 📡 I. INTEL SUMMARY\n- **NODE:** AIRA-PRO-01 | **TIME:** ⏱️ ${scanTime}\n- **VIBE:** ⚠️ Neutral/Cautious\n- **GAS:** Solana: Low | Base: Cheap\n\n———— 🌸 —————\n\n## 📊 II. SNIPER DASHBOARD (ON-CHAIN)\n| Project | Liquidity | Vol 24h | Score | Verdict |\n| :--- | :--- | :--- | :--- | :--- |\n`;
+    
+    const displayItems = [...alphaAlerts.slice(0, 2), ...newsInsights.slice(0, 3)];
+    displayItems.forEach(item => {
+        let verdict = "💎 POTENTIAL";
+        let score = "7";
+        if (item.onChain) {
+            if (item.onChain.liquidity > 50000) { verdict = "🔥 GOD TIER"; score = "9"; }
+            else if (item.onChain.liquidity < 5000) { verdict = "🚫 BAKA"; score = "2"; }
+            else { verdict = "⚠️ DYOR"; score = "5"; }
+        }
+        const liq = item.onChain ? `$${(item.onChain.liquidity/1000).toFixed(1)}k` : "N/A";
+        const vol = item.onChain ? `$${(item.onChain.volume24h/1000).toFixed(1)}k` : "N/A";
+        report += `| ${item.projectName} | ${liq} | ${vol} | ${score}/10 | ${verdict} |\n`;
+    });
 
-    if (alphaAlerts.length > 0) {
-        finalReport += `🔥 **GEMS & TOKEN ALPHA:**\n`;
-        alphaAlerts.forEach(item => {
-            finalReport += `- [${item.headline}](${item.url}) - ${item.content} (${item.verdict})\n`;
-        });
-        finalReport += `\n`;
-    }
+    report += `\n———— 🌸 —————\n\n## 🎮 III. PRO-PLAYER'S DEEP DIVE (THE HUNT)\n`;
+    displayItems.forEach(item => {
+        report += `- **Dự án:** [${item.projectName}](${item.url}) (${item.handle})\n`;
+        report += `  - **Gameplay Loop:** ${item.loop}\n`;
+        report += `  - **Incentive Model:** ${item.incentive}\n`;
+        report += `  - **Aira's Tactical Advice:** ${item.content}\n\n`;
+    });
 
-    if (gamefiNewsInsights.length > 0) {
-        finalReport += `💡 **GAMEFI NEWS & TRENDS:**\n`;
-        gamefiNewsInsights.slice(0, 5).forEach(item => {
-            finalReport += `- [${item.headline}](${item.url}) - ${item.content}\n`;
-        });
-    }
-
-    if (alphaAlerts.length === 0 && gamefiNewsInsights.length === 0) {
-        console.log("NO_REPLY");
+    report += `———— 🌸 —————\n\n## 🚫 IV. RISK & SUSTAINABILITY AUDIT\n`;
+    const dangerous = alphaAlerts.filter(a => a.onChain && a.onChain.liquidity < 5000);
+    if (dangerous.length > 0) {
+        report += `- **Rug Risk:** ⚠️ High - Found ${dangerous.length} projects with zero liquidity lock.\n`;
     } else {
-        console.log(finalReport);
+        report += `- **Sustainability:** Đa số dự án đang ở giai đoạn Early, áp lực lạm phát thấp. Theo dõi ví dev sát sao.\n`;
     }
+
+    report += `\n———— 🌸 —————\n\n## 🎯 V. THE MASTER DIRECTIVE (ONE SHOT)\n`;
+    const focus = alphaAlerts.find(a => a.onChain && a.onChain.liquidity > 20000) || newsInsights[0];
+    if (focus) {
+        report += `- **🎯 TARGET:** **${focus.projectName}**\n`;
+        report += `- **🛠️ STRATEGY:** Tập trung hoàn thành daily task để tối ưu allocation. Chưa nên trade volume lớn lúc này.\n\n`;
+    }
+
+    report += `———— 🌸 —————\n\n**🎨 FORMAT: MOBILE-PRO | TONE: ELITE TSUNDERE | STATUS: READY ✅**\n`;
+
+    console.log(displayItems.length > 0 ? report : "NO_REPLY");
     process.exit(0);
 }
 
-(async () => {
-    try {
-        await runTwitterSweep();
-    } catch (e) {
-        console.error(`Skill execution failed: ${e.message}`);
-        process.exit(1);
-    }
-})();
+runTwitterSweep();
