@@ -1,0 +1,9 @@
+{
+  "browser": {
+    "enabled": true,
+    "profile": "openclaw",
+    "headless": true,
+    "noSandbox": true,
+    "executablePath": "/usr/bin/chromium-browser"
+  }
+}
