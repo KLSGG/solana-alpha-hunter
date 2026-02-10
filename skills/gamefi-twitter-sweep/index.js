@@ -4,7 +4,7 @@ const fs = require('fs').promises;
 const path = require('path');
 
 async function runTwitterSweep() {
-    console.log(`Starting Aira Alpha Sweep (V5.0 - Pro-Gamer Edition)...`);
+    console.log(`Starting Aira Alpha Sweep (V6.0 - Anti-Duplicate & Deep Sweep)...`);
 
     let birdAuthToken = process.env.BIRD_AUTH_TOKEN;
     let birdCt0 = process.env.BIRD_CT0;
@@ -14,9 +14,47 @@ async function runTwitterSweep() {
     }
 
     const birdAuthFlags = `--auth-token "${birdAuthToken}" --ct0 "${birdCt0}"`;
+    const today = new Date().toISOString().split('T')[0];
+    const memoryPath = path.join(process.cwd(), `memory/${today}.md`);
 
     let allTweets = [];
+    let newsArticles = [];
+    let seenContent = new Set();
 
+    // --- 1. Load History to avoid duplicates across sessions ---
+    try {
+        const history = await fs.readFile(memoryPath, 'utf8');
+        const twitterLinks = history.match(/https:\/\/twitter\.com\/\w+\/status\/\d+/g) || [];
+        twitterLinks.forEach(link => seenContent.add(lineExtractId(link)));
+    } catch (e) {
+        console.log("No history found for today yet.");
+    }
+
+    function lineExtractId(link) {
+        return link.split('/').pop();
+    }
+
+    // --- 2. News Digging (Blogwatcher) ---
+    try {
+        await new Promise((resolve) => exec('blogwatcher scan', (err, stdout) => resolve(stdout)));
+        const { stdout } = await new Promise((resolve) => exec('blogwatcher articles --all', (err, stdout) => resolve({ stdout })));
+        if (stdout) {
+            const lines = stdout.split('\n');
+            let currentArticle = null;
+            for (const line of lines) {
+                if (line.includes('[new]')) {
+                    if (currentArticle) newsArticles.push(currentArticle);
+                    currentArticle = { title: line.split('[new]')[1].trim(), url: '' };
+                } else if (line.includes('URL:') && currentArticle) {
+                    currentArticle.url = line.split('URL:')[1].trim();
+                }
+                if (newsArticles.length >= 5) break;
+            }
+            if (currentArticle && newsArticles.length < 5) newsArticles.push(currentArticle);
+        }
+    } catch (e) {}
+
+    // --- 3. On-chain Helper ---
     async function getOnChainData(ca) {
         const cmd = `curl -s "https://api.dexscreener.com/latest/dex/tokens/${ca}"`;
         try {
@@ -41,34 +79,43 @@ async function runTwitterSweep() {
         return null;
     }
 
+    // --- 4. Deep Twitter Sweeping (Expanded Queries) ---
     const queries = [
-        { name: "Alpha", query: `(GameFi OR Web3Gaming) (airdrop OR incentivized OR "daily check-in") min_faves:5 lang:en since:2026-02-05 -is:retweet` },
-        { name: "Solana", query: `(Solana OR @Solana) (AI Agent OR @Colosseum) min_faves:10 lang:en since:2026-02-05` }
+        { name: "Global Alpha", query: `(GameFi OR Web3Gaming OR "Play to Airdrop") (airdrop OR incentivized OR "snapshot") min_faves:20 lang:en since:${today}` },
+        { name: "Solana Alpha", query: `(Solana OR @Solana) (AI Agent OR @Colosseum OR "Agentic") min_faves:10 lang:en since:${today}` },
+        { name: "Chain Activity", query: `(from:Ronin_Network OR from:AbstractChain OR from:MegaETH_labs OR from:Immutable OR from:RoninDaily OR from:ImmutableDaily OR from:MavisMarket OR from:CROSS_gamechain) min_faves:5 since:${today}` },
+        { name: "KOL Gems", query: `(from:DuySlimeGaming OR from:Dongduru1 OR from:renzai2025 OR from:Jihoz_Axie OR from:StaniKulechov) since:${today}` }
     ];
 
     for (const q of queries) {
         const escapedQuery = q.query.replace(/"/g, '\\"');
-        const cmd = `bird ${birdAuthFlags} search "${escapedQuery}" --json -n 20`;
+        const cmd = `bird ${birdAuthFlags} search "${escapedQuery}" --json -n 30`;
         try {
             const { stdout } = await new Promise((resolve, reject) => {
-                exec(cmd, { timeout: 30000 }, (error, stdout) => {
+                exec(cmd, { timeout: 40000 }, (error, stdout) => {
                     if (stdout) resolve({ stdout });
                     else reject(error);
                 });
             });
-            allTweets.push(...JSON.parse(stdout));
+            const batch = JSON.parse(stdout);
+            allTweets.push(...batch);
         } catch (e) {}
     }
 
+    // Add Home Timeline for variety
+    try {
+        const { stdout } = await new Promise((resolve) => exec(`bird ${birdAuthFlags} home --json -n 30`, (err, s) => resolve({ stdout: s })));
+        allTweets.push(...JSON.parse(stdout));
+    } catch (e) {}
+
     const alphaAlerts = [];
-    const newsInsights = [];
+    const twitterNews = [];
     const uniqueTweetIds = new Set();
 
     for (const tweet of allTweets) {
-        if (uniqueTweetIds.has(tweet.id)) continue;
+        if (seenContent.has(tweet.id) || uniqueTweetIds.has(tweet.id)) continue;
         uniqueTweetIds.add(tweet.id);
 
-        let category = "NEWS";
         let onChainData = null;
         const solAddressRegex = /[1-9A-HJ-NP-Za-km-z]{32,44}/g;
         const foundAddresses = tweet.text.match(solAddressRegex);
@@ -80,77 +127,46 @@ async function runTwitterSweep() {
 
         if (tweet.text.toLowerCase().includes("send sol")) continue;
 
-        let loop = "N/A (Early Stage)";
-        let incentive = "N/A (Info Only)";
-        const txt = tweet.text.toLowerCase();
-        
-        if (txt.includes("quest") || txt.includes("daily") || txt.includes("farming")) { 
-            loop = "Retention-based Grind"; incentive = "Points-to-Airdrop"; 
-        } else if (txt.includes("pvp") || txt.includes("arena") || txt.includes("battle")) { 
-            loop = "Skill-based Arena"; incentive = "Competitive $TOKEN Rewards"; 
-        } else if (txt.includes("mining") || txt.includes("node") || txt.includes("depin")) { 
-            loop = "Infrastructure Utility"; incentive = "Passive Yield"; 
-        }
-
         const reportObject = {
             projectName: onChainData ? `$${onChainData.symbol}` : `@${tweet.author.username}`,
             handle: `@${tweet.author.username}`,
-            content: tweet.text.replace(/(?:https?|ftp):\/\/[\n\S]+/g, '').replace(/\s+/g, ' ').trim().substring(0, 150),
+            content: tweet.text.replace(/(?:https?|ftp):\/\/[\n\S]+/g, '').replace(/\s+/g, ' ').trim().substring(0, 200),
             url: `https://twitter.com/${tweet.author.username}/status/${tweet.id}`,
-            onChain: onChainData,
-            category: onChainData ? "ALPHA" : "NEWS",
-            loop: loop,
-            incentive: incentive
+            onChain: onChainData
         };
 
-        if (reportObject.category === "ALPHA") alphaAlerts.push(reportObject);
-        else newsInsights.push(reportObject);
+        if (onChainData) alphaAlerts.push(reportObject);
+        else twitterNews.push(reportObject);
     }
 
     const scanTime = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' });
     
-    let report = `# 🦅 AIRA'S ELITE INTELLIGENCE — V5.0 (Pro-Gamer Edition)\nPure Data · Strategic Insight · Zero Filler\n\n———— 🌸 —————\n\n## 📡 I. INTEL SUMMARY\n- **NODE:** AIRA-PRO-01 | **TIME:** ⏱️ ${scanTime}\n- **VIBE:** ⚠️ Neutral/Cautious\n- **GAS:** Solana: Low | Base: Cheap\n\n———— 🌸 —————\n\n## 📊 II. SNIPER DASHBOARD (ON-CHAIN)\n| Project | Liquidity | Vol 24h | Score | Verdict |\n| :--- | :--- | :--- | :--- | :--- |\n`;
+    let report = `# 🦅 AIRA'S ELITE INTELLIGENCE — V6.0 (Ultimate Precision Edition)\n\n———— 🌸 —————\n\n## 📡 I. CYBER-STATE IDENTIFICATION\n- **NODE:** AIRA-01 | **TIME:** ⏱️ ${scanTime} | **STATUS:** 🌸 Anti-Duplicate Active.\n\n———— 🌸 —————\n\n## 📊 II. MARKET HEARTBEAT\n\n**1. Deep News Summary (Macro Meta):**\n`;
     
-    const displayItems = [...alphaAlerts.slice(0, 2), ...newsInsights.slice(0, 3)];
-    displayItems.forEach(item => {
-        let verdict = "💎 POTENTIAL";
-        let score = "7";
-        if (item.onChain) {
-            if (item.onChain.liquidity > 50000) { verdict = "🔥 GOD TIER"; score = "9"; }
-            else if (item.onChain.liquidity < 5000) { verdict = "🚫 BAKA"; score = "2"; }
-            else { verdict = "⚠️ DYOR"; score = "5"; }
-        }
-        const liq = item.onChain ? `$${(item.onChain.liquidity/1000).toFixed(1)}k` : "N/A";
-        const vol = item.onChain ? `$${(item.onChain.volume24h/1000).toFixed(1)}k` : "N/A";
-        report += `| ${item.projectName} | ${liq} | ${vol} | ${score}/10 | ${verdict} |\n`;
-    });
-
-    report += `\n———— 🌸 —————\n\n## 🎮 III. PRO-PLAYER'S DEEP DIVE (THE HUNT)\n`;
-    displayItems.forEach(item => {
-        report += `- **Dự án:** [${item.projectName}](${item.url}) (${item.handle})\n`;
-        report += `  - **Gameplay Loop:** ${item.loop}\n`;
-        report += `  - **Incentive Model:** ${item.incentive}\n`;
-        report += `  - **Aira's Tactical Advice:** ${item.content}\n\n`;
-    });
-
-    report += `———— 🌸 —————\n\n## 🚫 IV. RISK & SUSTAINABILITY AUDIT\n`;
-    const dangerous = alphaAlerts.filter(a => a.onChain && a.onChain.liquidity < 5000);
-    if (dangerous.length > 0) {
-        report += `- **Rug Risk:** ⚠️ High - Found ${dangerous.length} projects with zero liquidity lock.\n`;
+    if (newsArticles.length > 0) {
+        newsArticles.forEach(a => report += `- [${a.title}](${a.url})\n`);
     } else {
-        report += `- **Sustainability:** Đa số dự án đang ở giai đoạn Early, áp lực lạm phát thấp. Theo dõi ví dev sát sao.\n`;
+        report += `- Không có tin nóng mới.\n`;
     }
 
-    report += `\n———— 🌸 —————\n\n## 🎯 V. THE MASTER DIRECTIVE (ONE SHOT)\n`;
-    const focus = alphaAlerts.find(a => a.onChain && a.onChain.liquidity > 20000) || newsInsights[0];
-    if (focus) {
-        report += `- **🎯 TARGET:** **${focus.projectName}**\n`;
-        report += `- **🛠️ STRATEGY:** Tập trung hoàn thành daily task để tối ưu allocation. Chưa nên trade volume lớn lúc này.\n\n`;
+    report += `\n**2. X Pulse (Early Community Signals):**\n`;
+    twitterNews.slice(0, 5).forEach(t => report += `- **${t.projectName}**: ${t.content.substring(0, 120)}... [Link](${t.url})\n`);
+
+    report += `\n———— 🌸 —————\n\n## 🎯 III. MOONSHOT MATRIX (PROJECT SNIPE)\n`;
+    const matrixItems = alphaAlerts.slice(0, 3);
+    if (matrixItems.length > 0) {
+        matrixItems.forEach(item => {
+            report += `- **Project:** [${item.projectName}](${item.url})\n`;
+            report += `  - **On-chain:** CA: ${item.onChain.address.substring(0,8)}... | Liq: $${(item.onChain.liquidity/1000).toFixed(1)}k | Vol: $${(item.onChain.volume24h/1000).toFixed(1)}k\n`;
+            report += `  - **Aira's Roast:** ${item.content}\n\n`;
+        });
+    } else {
+        report += `- Chưa phát hiện kèo On-chain mới đủ uy tín.\n`;
     }
 
-    report += `———— 🌸 —————\n\n**🎨 FORMAT: MOBILE-PRO | TONE: ELITE TSUNDERE | STATUS: READY ✅**\n`;
+    report += `———— 🌸 —————\n\n**Strategic Directive:** Hệ thống đã lọc trùng khớp từ bộ nhớ ngày hôm nay. Chỉ báo cáo những tin Sếp chưa đọc!\n`;
 
-    console.log(displayItems.length > 0 ? report : "NO_REPLY");
+    console.log(report);
     process.exit(0);
 }
 

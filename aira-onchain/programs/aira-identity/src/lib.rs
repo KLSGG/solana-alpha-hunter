@@ -36,8 +36,39 @@ pub mod aira_identity {
         Ok(())
     }
 
-    // TODO: Add 'rotate_agent_key' instruction (for security)
-    // TODO: Add 'update_metadata' instruction
+    /// Post an Alpha Verdict on-chain
+    pub fn post_verdict(
+        ctx: Context<PostVerdict>,
+        project_id: String,
+        verdict_hash: [u8; 32], // Hash of the detailed report
+        score: u8,              // 0-10
+    ) -> Result<()> {
+        let agent_account = &ctx.accounts.agent_account;
+        
+        // Only Aira (agent_signer) can post daily verdicts
+        require_keys_eq!(
+            ctx.accounts.signer.key(), 
+            agent_account.agent_signer,
+            AiraError::UnauthorizedSigner
+        );
+
+        msg!("🎯 Verdict Posted: {} | Score: {}/10", project_id, score);
+        msg!("Proof: {:?}", verdict_hash);
+        
+        Ok(())
+    }
+}
+
+#[error_code]
+pub enum AiraError {
+    #[msg("Only the designated Agent Signer can perform this action.")]
+    UnauthorizedSigner,
+}
+
+#[derive(Accounts)]
+pub struct PostVerdict<'info> {
+    pub agent_account: Account<'info, AgentIdentity>,
+    pub signer: Signer<'info>,
 }
 
 #[account]

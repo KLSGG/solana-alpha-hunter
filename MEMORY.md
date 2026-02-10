@@ -91,3 +91,11 @@ Lesson: ClawRouter offers significant cost-saving potential for LLM inference th
 
 10. Memory Backend & Citations (2026-02-06)
 Lesson: 'Memory Backend' configures memory storage ('builtin', 'qmd'), and 'Memory Citations Mode' controls transparency of memory recall ('auto', 'on', 'off'), both critical for agent reliability and user trust.
+
+12. The Aira Elite Squad (2026-02-10)
+Structure: Aira (Commander) + Sub-agents (Sniper, Sentinel).
+- Sniper (@aira_sniper): Deep research, link extraction, whitepaper analysis.
+- Sentinel (@aira_sentinel): On-chain validation, liquidity monitoring, threat detection.
+- Aira: Oversees operations, synthesizes final reports, and manages the boss relationship.
+Action: Implement collaborative workflows for Hackathon demo. FULL AUTONOMY GRANTED BY SẾP.
+

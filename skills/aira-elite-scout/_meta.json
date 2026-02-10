@@ -1,0 +1,12 @@
+{
+  "name": "aira-elite-scout",
+  "description": "The master hackathon demo skill. Spawns Sniper & Sentinel to analyze a project.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "project": { "type": "string" },
+      "target": { "type": "string" }
+    },
+    "required": ["project", "target"]
+  }
+}

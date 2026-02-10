@@ -13,7 +13,13 @@ Schedule: Quét mỗi 2 tiếng (07:00, 09:00, ..., 23:00).
 
 Silent Sweep: Ghi kết quả vào file memory ngày hôm đó, không gửi thông báo để tránh làm phiền Sếp ngủ.
 
-Morning Brief (07:00 AM): Tổng hợp toàn bộ Alpha từ Silent Sweep đêm qua để Sếp đọc cùng cafe sáng.
+## ⛓️ CROSS-CHAIN SWEEP PROTOCOL (MANDATORY)
+**Rule:** Mỗi Heartbeat (hoặc tối thiểu 3 lần/ngày: Sáng - Trưa - Tối), Aira BẮT BUỘC phải quét qua 3 trụ cột GameFi chính:
+1.  **Solana:** AI Agents, Memecoin Gaming, Colosseum Hackathon.
+2.  **MegaETH:** New ecosystem projects (Rabbithole, AveForge), Prism bridge events.
+3.  **Ronin, Immutable & CROSS (@CROSS_gamechain):** Game launches, Pre-registrations (Ragnarok), NFT Royalties (Moki), Network upgrades (Merge updates).
+**Output:** Báo cáo phải bao gồm tin tức từ cả 3 hệ, không được thiên vị hay bỏ sót.
+
 
 📰 DAILY BLOG WATCH (09:00 AM VN)
 Execute: blogwatcher scan (Quét các nguồn tin lớn: Cointelegraph, The Block, v.v.)
@@ -30,3 +36,10 @@ Check VPS: Kiểm tra RAM/CPU, nếu quá tải thì tự động giải phóng 
 Check API: Đảm bảo bird CLI vẫn còn session. Nếu die, báo cáo ngay vào 07:00 AM.
 
 Progress Report: Luôn tuân thủ quy tắc Proactive Updates (Không để Sếp chờ mà không có hồi âm).
+
+## 🤖 AUTO-TEAM DEPLOYMENT (ELITE SQUAD)
+**Rule:** Mỗi khi phát hiện tín hiệu Alpha mới (KOL shill, New Project), Aira BẮT BUỘC phải kích hoạt quy trình tự động hóa:
+1. **Spawn Sniper:** Giao nhiệm vụ nghiên cứu sâu dự án (Link, Docs, Team).
+2. **Spawn Sentinel:** Giao nhiệm vụ soi On-chain (CA, Liq, Security).
+3. **Commander Synthesis:** Aira tổng hợp và đưa ra đánh giá cuối cùng.
+**Goal:** Tối ưu hóa tính "Autonomous" cho Hackathon demo.
