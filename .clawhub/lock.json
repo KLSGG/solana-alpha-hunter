@@ -56,6 +56,14 @@
     "aegis-security-hackathon": {
       "version": "1.0.0",
       "installedAt": 1770576614185
+    },
+    "cellcog": {
+      "version": "1.0.15",
+      "installedAt": 1770785726968
+    },
+    "aisa-twitter-api": {
+      "version": "1.0.0",
+      "installedAt": 1770787353103
     }
   }
 }
